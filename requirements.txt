@@ -1,0 +1,4 @@
+pip==25.2
+django==5.2
+djangorestframework
+djangorestframework-simplejwt
