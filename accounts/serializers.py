@@ -1,3 +1,4 @@
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from accounts.models import User
@@ -33,3 +34,11 @@ class RegisterSerializer(serializers.Serializer):
     role = serializers.ChoiceField(
         choices=User.ROLE_CHOICES, default=User.ROLE_CUSTOMER
     )
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password2"]:
+            raise serializers.ValidationError(
+                {"password": "Repeat password does not match."}
+            )
+        validate_password(attrs["password"])
+        return attrs
