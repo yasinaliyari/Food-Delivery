@@ -39,6 +39,7 @@ class ProductSerializer(serializers.ModelSerializer):
     def validate_stock(self, value):
         if value < 0:
             raise serializers.ValidationError("Stock must be non-negative")
+        return value
 
     def create(self, validated_data):
         validated_data["seller"] = self.context["request"].user
