@@ -1,3 +1,5 @@
+from encodings.punycode import selective_find
+
 from rest_framework import serializers
 from products.models import Category, Product
 
@@ -28,3 +30,16 @@ class ProductSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "seller", "created_at"]
+
+    def validate_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Price must be non-negative")
+        return value
+
+    def validate_stock(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Stock must be non-negative")
+
+    def create(self, validated_data):
+        validated_data["seller"] = self.context["request"].user
+        return super().create(validated_data)
