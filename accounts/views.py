@@ -1,7 +1,13 @@
 from django.contrib.auth import get_user_model
 from rest_framework.generics import CreateAPIView, RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from accounts.serializers import RegisterSerializer, UserSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+from accounts.serializers import (
+    RegisterSerializer,
+    UserSerializer,
+    CustomTokenObtainPairSerializer,
+)
 
 User = get_user_model()
 
@@ -17,3 +23,7 @@ class MeAPIView(RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
