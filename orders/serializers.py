@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from orders.models import OrderItem
 from products.models import Product
 
 
@@ -17,3 +19,26 @@ class OrderItemWriteSerializer(serializers.Serializer):
                 f"Insufficient stock for '{product.name}'.Available: {product.stock}"
             )
         return attrs
+
+
+class OrderItemReadSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    category = serializers.CharField(source="product.category.name", read_only=True)
+    seller = serializers.CharField(source="product.seller.username", read_only=True)
+    line_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "category",
+            "seller",
+            "quantity",
+            "price",
+            "line_total",
+        ]
+
+    def get_line_total(self, obj):
+        return obj.price * obj.quantity
