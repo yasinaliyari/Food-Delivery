@@ -92,3 +92,14 @@ class OrderCreateSerializer(serializers.Serializer):
         order.total_price = total
         order.save(update_fields=["total_price"])
         return order
+
+
+class OrderStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Order
+        fields = ["status"]
+
+    def validate_status(self, value):
+        if value not in dict(Order.STATUS_CHOICES):
+            raise serializers.ValidationError("Invalid status")
+        return value
