@@ -1,3 +1,10 @@
 from django.contrib import admin
+from orders.models import OrderItem, Order
 
-# Register your models here.
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    readonly_fields = [
+        "price",
+    ]
