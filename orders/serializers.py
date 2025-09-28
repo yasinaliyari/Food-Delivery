@@ -1,6 +1,5 @@
 from rest_framework import serializers
-
-from orders.models import OrderItem
+from orders.models import OrderItem, Order
 from products.models import Product
 
 
@@ -42,3 +41,12 @@ class OrderItemReadSerializer(serializers.ModelSerializer):
 
     def get_line_total(self, obj):
         return obj.price * obj.quantity
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemReadSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = ["id", "user", "status", "total_price", "created_at", "items"]
+        read_only_fields = ["id", "user", "total_price", "created_at"]
