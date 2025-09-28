@@ -1,3 +1,4 @@
+from django.db.transaction import atomic
 from rest_framework import serializers
 from orders.models import OrderItem, Order
 from products.models import Product
@@ -50,3 +51,44 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = ["id", "user", "status", "total_price", "created_at", "items"]
         read_only_fields = ["id", "user", "total_price", "created_at"]
+
+
+class OrderCreateSerializer(serializers.Serializer):
+    items = OrderItemWriteSerializer(many=True)
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("Order must contain at least on item")
+        return value
+
+    @atomic
+    def create(self, validated_data):
+        user = self.context["request"].user
+        item_data = validated_data["items"]
+        order = Order.objects.create(
+            user=user, status=Order.STATUS_PENDING, total_price=0
+        )
+        total = 0
+
+        for item in item_data:
+            product = item["product"]
+            qty = item["quantity"]
+
+            product.refresh_from_db()
+
+            if product.stock < qty:
+                raise serializers.ValidationError(
+                    f"Insufficient stock for '{product.name}'. Available: {product.stock}"
+                )
+            product.stock -= qty
+            product.save(update_fields=["stock"])
+
+            order_item = OrderItem.objects.create(
+                order=order, product=product, quantity=qty, price=product.price
+            )
+
+            total += order_item.line_total
+
+        order.total_price = total
+        order.save(update_fields=["total_price"])
+        return order
