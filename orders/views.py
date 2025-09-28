@@ -1,7 +1,10 @@
 from rest_framework import viewsets, mixins
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework import status as http_status
 
 from orders.models import Order
 from orders.permissions import IsOwnerOrAdmin
@@ -50,3 +53,16 @@ class OrderViewSet(
         if not request.user.is_staff:
             raise PermissionDenied("Only admin can update order status")
         return super().partial_update(request, *args, **kwargs)
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path="status",
+        permission_classes=[IsAdminUser],
+    )
+    def set_status(self, request, pk=None):
+        order = self.get_object()
+        serializer = OrderStatusUpdateSerializer(order, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(OrderSerializer(order).data, status=http_status.HTTP_200_OK)
