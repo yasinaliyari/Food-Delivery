@@ -20,7 +20,6 @@ class OrderViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.CreateModelMixin,
-    mixins.UpdateModelMixin,
 ):
     queryset = Order.objects.prefetch_related("items__product", "items").select_related(
         "user"
@@ -32,8 +31,6 @@ class OrderViewSet(
     def get_serializer_class(self):
         if self.action == "create":
             return OrderCreateSerializer
-        if self.action == "partial_update" and self.request.path.endswith("/status/"):
-            return OrderStatusUpdateSerializer
         return OrderSerializer
 
     def get_queryset(self):
@@ -46,13 +43,18 @@ class OrderViewSet(
     def perform_create(self, serializer):
         serializer.save()
 
-    def partial_update(self, request, *args, **kwargs):
-        if not request.path.endswith("/status/"):
-            return super().partial_update(request, *args, **kwargs)
+    def create(self, request, *args, **kwargs):
+        write_serializer = self.get_serializer(
+            data=request.data, context={"request": request}
+        )
+        write_serializer.is_valid(raise_exception=True)
+        order = write_serializer.save()
 
-        if not request.user.is_staff:
-            raise PermissionDenied("Only admin can update order status")
-        return super().partial_update(request, *args, **kwargs)
+        read_serializer = OrderSerializer(order, context={"request": request})
+        headers = self.get_success_headers(read_serializer.data)
+        return Response(
+            read_serializer.data, status=http_status.HTTP_201_CREATED, headers=headers
+        )
 
     @action(
         detail=True,
