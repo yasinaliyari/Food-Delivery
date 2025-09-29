@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "accounts.apps.AccountsConfig",
     "products.apps.ProductsConfig",
     "orders.apps.OrdersConfig",
+    "reviews.apps.AppConfig",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
