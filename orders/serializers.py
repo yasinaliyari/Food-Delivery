@@ -159,3 +159,7 @@ class OrderStatusUpdateSerializer(serializers.ModelSerializer):
                 f"Transition {current} => {new_status} is not allowed for your role"
             )
         return attrs
+
+
+class OrderItemQuantityUpdateSerializer(serializers.Serializer):
+    quantity = serializers.IntegerField(min_value=1, help_text="New quantity (>=1)")
