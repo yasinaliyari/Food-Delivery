@@ -1,7 +1,10 @@
-from django.db.transaction import atomic
+from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import serializers
 from orders.models import OrderItem, Order
 from products.models import Product
+
+User = get_user_model()
 
 
 class OrderItemWriteSerializer(serializers.Serializer):
@@ -54,23 +57,42 @@ class OrderSerializer(serializers.ModelSerializer):
 
 
 class OrderCreateSerializer(serializers.Serializer):
+    user_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False, write_only=True
+    )
     items = OrderItemWriteSerializer(many=True)
 
-    def validate_items(self, value):
-        if not value:
-            raise serializers.ValidationError("Order must contain at least on item")
-        return value
+    def validate(self, attrs):
+        request = self.context["request"]
+        user = request.user
+        is_admin = bool(user.is_staff)
 
-    @atomic
+        if "user_id" in attrs and not is_admin:
+            raise serializers.ValidationError("You are not allowed to set user_id")
+        if not is_admin and getattr(user, "role", None) != "customer":
+            raise serializers.ValidationError("Only customers can create orders")
+
+        items = attrs.get("items", [])
+        if not items:
+            raise serializers.ValidationError("Order must contain at least one item")
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
-        user = self.context["request"].user
-        item_data = validated_data["items"]
+        request_user = self.context["request"].user
+        target_user = (
+            validated_data.pop("user_id", None) if "user_id" in validated_data else None
+        )
+        order_user = target_user or request_user
+
+        items_data = validated_data["items"]
+
         order = Order.objects.create(
-            user=user, status=Order.STATUS_PENDING, total_price=0
+            user=order_user, status=Order.STATUS_PENDING, total_price=0
         )
         total = 0
 
-        for item in item_data:
+        for item in items_data:
             product = item["product"]
             qty = item["quantity"]
 
@@ -82,12 +104,10 @@ class OrderCreateSerializer(serializers.Serializer):
                 )
             product.stock -= qty
             product.save(update_fields=["stock"])
-
-            order_item = OrderItem.objects.create(
+            oi = OrderItem.objects.create(
                 order=order, product=product, quantity=qty, price=product.price
             )
-
-            total += order_item.line_total
+            total += oi.line_total
 
         order.total_price = total
         order.save(update_fields=["total_price"])
@@ -103,3 +123,39 @@ class OrderStatusUpdateSerializer(serializers.ModelSerializer):
         if value not in dict(Order.STATUS_CHOICES):
             raise serializers.ValidationError("Invalid status")
         return value
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        user = request.user
+        new_status = attrs["status"]
+        order = self.instance
+        current = order.status
+
+        allowed_admin = {
+            Order.STATUS_PENDING: {Order.STATUS_PROCESSING, Order.STATUS_CANCELED},
+            Order.STATUS_PROCESSING: {Order.STATUS_SHIPPED, Order.STATUS_CANCELED},
+            Order.STATUS_SHIPPED: {Order.STATUS_DELIVERED},
+            Order.STATUS_DELIVERED: set(),
+            Order.STATUS_CANCELED: set(),
+        }
+        allowed_seller = {
+            Order.STATUS_PENDING: {Order.STATUS_PROCESSING},
+            Order.STATUS_PROCESSING: {Order.STATUS_SHIPPED},
+            Order.STATUS_SHIPPED: set(),
+            Order.STATUS_DELIVERED: set(),
+            Order.STATUS_CANCELED: set(),
+        }
+        if user.is_staff:
+            allowed = allowed_admin.get(current, set())
+        elif getattr(user, "role", None) == "seller":
+            allowed = allowed_seller.get(current, set())
+        else:
+            raise serializers.ValidationError(
+                "You are not allowed to change order status"
+            )
+
+        if new_status not in allowed:
+            raise serializers.ValidationError(
+                f"Transition {current} => {new_status} is not allowed for your role"
+            )
+        return attrs
