@@ -43,7 +43,7 @@ INSTALLED_APPS = [
     "accounts.apps.AccountsConfig",
     "products.apps.ProductsConfig",
     "orders.apps.OrdersConfig",
-    "reviews.apps.AppConfig",
+    "reviews.apps.ReviewsConfig",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -64,6 +64,7 @@ REST_FRAMEWORK = {
         "auth": "10/min",
         "register": "5/hour",
         "orders": "5/min",
+        "reviews": "10/hour",
     },
 }
 
