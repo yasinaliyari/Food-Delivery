@@ -1,16 +1,18 @@
+from django.db import transaction
 from rest_framework import viewsets, mixins
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework import status as http_status
 
-from orders.models import Order
+from orders.models import Order, OrderItem
 from orders.permissions import IsOwnerOrAdmin
 from orders.serializers import (
     OrderCreateSerializer,
     OrderStatusUpdateSerializer,
     OrderSerializer,
+    OrderItemQuantityUpdateSerializer,
 )
 
 
@@ -92,4 +94,114 @@ class OrderViewSet(
             )
         order.status = Order.STATUS_CANCELED
         order.save(update_fields=["status"])
+        return Response(OrderSerializer(order).data, status=http_status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"items/(?P<item_id>[^/.]+)",
+        permission_classes=[IsAuthenticated],
+    )
+    @transaction.atomic
+    def remove_item(self, request, pk=None, item_id=None):
+        order = self.get_object()
+
+        if order.user != request.user and not request.user.is_staff:
+            return Response(
+                {"detail": "You can only modify your own order."},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+        if order.status != Order.STATUS_PENDING:
+            return Response(
+                {"detail": "Only pending orders can be modified."},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            item = order.items.select_related("product").get(pk=item_id)
+        except OrderItem.DoesNotExist:
+            return Response(
+                {"detail": "Order item not found."},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+
+        if order.items.count() == 1:
+            return Response(
+                {
+                    "detail": "An order must contain at least one item. Use /cancel/ to cancel the order."
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        product = item.product
+        product.stock += item.quantity
+        product.save(update_fields=["stock"])
+
+        item.delete()
+
+        total = sum(oi.price * oi.quantity for oi in order.items.all())
+        order.total_price = total
+        order.save(update_fields=["total_price"])
+
+        return Response(OrderSerializer(order).data, status=http_status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"items/(?P<item_id>[^/.]+)/quantity",
+        permission_classes=[IsAuthenticated],
+    )
+    @transaction.atomic
+    def update_item_quantity(self, request, pk=None, item_id=None):
+        order = self.get_object()
+
+        if order.user != request.user and not request.user.is_staff:
+            return Response(
+                {"detail": "You can only modify your own order."},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+        if order.status != Order.STATUS_PENDING:
+            return Response(
+                {"detail": "Only pending orders can be modified."},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            item = order.items.select_related("product").get(pk=item_id)
+        except OrderItem.DoesNotExist:
+            return Response(
+                {"detail": "Order item not found."},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = OrderItemQuantityUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_qty = serializer.validated_data["quantity"]
+
+        current_qty = item.quantity
+        delta = new_qty - current_qty
+        product = item.product
+
+        if delta > 0:
+            product.refresh_from_db()
+            if product.stock < delta:
+                return Response(
+                    {
+                        "detail": f"Insufficient stock for '{product.name}'. Available: {product.stock}"
+                    },
+                    status=http_status.HTTP_400_BAD_REQUEST,
+                )
+            product.stock -= delta
+            product.save(update_fields=["stock"])
+        elif delta < 0:
+            product.stock += -delta
+            product.save(update_fields=["stock"])
+
+        item.quantity = new_qty
+        item.save(update_fields=["quantity"])
+
+        total = sum(oi.price * oi.quantity for oi in order.items.all())
+        order.total_price = total
+        order.save(update_fields=["total_price"])
+
         return Response(OrderSerializer(order).data, status=http_status.HTTP_200_OK)
